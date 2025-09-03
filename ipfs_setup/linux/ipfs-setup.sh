@@ -18,7 +18,7 @@ if [ -z "$IPFS_SWARM_KEY" ]; then
     echo "   export IPFS_SWARM_KEY='\$IPFS_SWARM_KEY<your-64-char-hex-key>'"
     echo ""
     echo "   Or as a one-liner:"
-    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0//base16/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'"
+    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0/base16/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'"
     exit 1
 fi
 
@@ -67,7 +67,7 @@ ipfs --version
 
 echo "Step 5: Initializing IPFS..."
 if [ -d "$HOME/.ipfs" ]; then
-    echo "⚠️ IPFS already initialized, skipping init..."
+    echo "IPFS already initialized, skipping init..."
 else
     ipfs init
 fi
