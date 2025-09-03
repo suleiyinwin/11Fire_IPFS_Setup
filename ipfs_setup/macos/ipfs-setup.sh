@@ -12,12 +12,15 @@ BOOTSTRAP_NODE="/ip4/10.4.56.71/tcp/4001/p2p/12D3KooWB8e8PHhq1GbdeZk9Y6fLUBYu6Aq
 if [ -z "$IPFS_SWARM_KEY" ]; then
     echo "Error: IPFS_SWARM_KEY environment variable is not set!"
     echo "Please set it before running this script:"
-    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0/base16/<your-64-char-hex-key>'"
+    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0/'"
+    echo "   export IPFS_SWARM_KEY='\$IPFS_SWARM_KEY'"
+    echo "   export IPFS_SWARM_KEY='\$IPFS_SWARM_KEY/base16/'"
+    echo "   export IPFS_SWARM_KEY='\$IPFS_SWARM_KEY<your-64-char-hex-key>'"
     echo ""
     echo "   Or as a one-liner:"
-    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0/base16/yourkey'"
+    echo "   export IPFS_SWARM_KEY='/key/swarm/psk/1.0.0//base16/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'"
     echo ""
-    echo "   💡 For permanent setup, add to ~/.zshrc (or ~/.bash_profile):"
+    echo "   For permanent setup, add to ~/.zshrc (or ~/.bash_profile):"
     echo "   echo 'export IPFS_SWARM_KEY=\"your-key-here\"' >> ~/.zshrc"
     exit 1
 fi
@@ -57,7 +60,19 @@ tar -xzf "$TAR_FILE"
 
 echo "Step 3: Installing IPFS..."
 cd kubo
-sudo bash install.sh
+
+# Check if install.sh exists, if not do manual installation
+if [ -f "install.sh" ]; then
+    sudo bash install.sh
+else
+    echo "No install.sh found, performing manual installation..."
+    # Create installation directory
+    sudo mkdir -p /usr/local/bin
+    # Copy the ipfs binary to system path
+    sudo cp ipfs /usr/local/bin/ipfs
+    # Make it executable
+    sudo chmod +x /usr/local/bin/ipfs
+fi
 
 echo "Step 4: Verifying installation..."
 ipfs --version
