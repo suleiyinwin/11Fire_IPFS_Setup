@@ -45,7 +45,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
 $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    Write-Host "⚠️  This script requires Administrator privileges." -ForegroundColor Yellow
+    Write-Host "This script requires Administrator privileges." -ForegroundColor Yellow
     Write-Host "Please run PowerShell as Administrator and try again." -ForegroundColor Yellow
     Read-Host "Press Enter to exit"
     exit 1
@@ -66,7 +66,7 @@ switch ($arch) {
 $DOWNLOAD_URL = "https://dist.ipfs.tech/kubo/$KUBO_VERSION/kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
 $ZIP_FILE = "kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
 
-Write-Host "📥 Step 1: Downloading IPFS Kubo $KUBO_VERSION for Windows $ARCH_NAME..." -ForegroundColor Green
+Write-Host "Step 1: Downloading IPFS Kubo $KUBO_VERSION for Windows $ARCH_NAME..." -ForegroundColor Green
 
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -95,6 +95,14 @@ try {
     $installPath = "$env:ProgramFiles\IPFS"
     if (-not (Test-Path $installPath)) {
         New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+    }
+    
+    # Check if ipfs.exe exists in the kubo folder
+    if (-not (Test-Path "kubo\ipfs.exe")) {
+        Write-Host "Error: ipfs.exe not found in kubo folder" -ForegroundColor Red
+        Write-Host "Contents of kubo folder:" -ForegroundColor Yellow
+        Get-ChildItem "kubo" | Format-Table Name
+        throw "IPFS binary not found"
     }
     
     Copy-Item "kubo\ipfs.exe" "$installPath\ipfs.exe" -Force
@@ -174,7 +182,7 @@ catch {
     exit 1
 }
 
-Write-Host "⚙️  Step 8: Configuring IPFS settings..." -ForegroundColor Green
+Write-Host "Step 8: Configuring IPFS settings..." -ForegroundColor Green
 try {
     & ipfs config --json Routing '{ "Type": "dhtserver" }'
     & ipfs config AutoTLS.Enabled false --bool
