@@ -90,20 +90,50 @@ Write-Host "Download location: $ZIP_FILE" -ForegroundColor Gray
 
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    
+    # Add progress tracking for large downloads
+    $ProgressPreference = 'SilentlyContinue'  # Disable progress bar for better performance
     Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $ZIP_FILE -UseBasicParsing
-    Write-Host "Download completed" -ForegroundColor Green
+    $ProgressPreference = 'Continue'  # Re-enable progress bar
+    
+    # Verify download completed successfully
+    if (Test-Path $ZIP_FILE) {
+        $fileSize = (Get-Item $ZIP_FILE).Length
+        Write-Host "Download completed successfully (size: $([math]::Round($fileSize/1MB, 2)) MB)" -ForegroundColor Green
+        
+        # Basic integrity check - IPFS releases should be at least 10MB
+        if ($fileSize -lt 10MB) {
+            Write-Host "Warning: Downloaded file seems too small, may be corrupted" -ForegroundColor Yellow
+            throw "Downloaded file appears to be corrupted or incomplete"
+        }
+    } else {
+        throw "Downloaded file not found after download completion"
+    }
 }
 catch {
     Write-Host "Failed to download IPFS Kubo: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Trying alternative download location..." -ForegroundColor Yellow
     try {
         $alternativeFile = "$env:USERPROFILE\Downloads\kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $alternativeFile -UseBasicParsing
-        $ZIP_FILE = $alternativeFile
-        Write-Host "Download completed to: $ZIP_FILE" -ForegroundColor Green
+        $ProgressPreference = 'Continue'
+        
+        if (Test-Path $alternativeFile) {
+            $fileSize = (Get-Item $alternativeFile).Length
+            if ($fileSize -gt 10MB) {
+                $ZIP_FILE = $alternativeFile
+                Write-Host "Download completed to alternative location: $ZIP_FILE (size: $([math]::Round($fileSize/1MB, 2)) MB)" -ForegroundColor Green
+            } else {
+                throw "Alternative download also appears corrupted"
+            }
+        } else {
+            throw "Alternative download failed - file not found"
+        }
     }
     catch {
         Write-Host "Failed to download to alternative location: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Please check your internet connection and try again." -ForegroundColor Yellow
         Read-Host "Press Enter to exit"
         exit 1
     }
@@ -112,11 +142,56 @@ catch {
 Write-Host "Step 2: Extracting archive..." -ForegroundColor Green
 try {
     $extractPath = Split-Path $ZIP_FILE -Parent
-    Expand-Archive -Path $ZIP_FILE -DestinationPath $extractPath -Force
-    Write-Host "Extraction completed to: $extractPath" -ForegroundColor Green
+    
+    # First, verify the ZIP file exists and is not corrupted
+    if (-not (Test-Path $ZIP_FILE)) {
+        throw "ZIP file not found: $ZIP_FILE"
+    }
+    
+    $fileSize = (Get-Item $ZIP_FILE).Length
+    if ($fileSize -lt 1MB) {
+        throw "ZIP file appears to be corrupted (size: $fileSize bytes)"
+    }
+    
+    Write-Host "ZIP file verified (size: $([math]::Round($fileSize/1MB, 2)) MB)" -ForegroundColor Gray
+    
+    # Try PowerShell 5+ method first
+    try {
+        Expand-Archive -Path $ZIP_FILE -DestinationPath $extractPath -Force
+        Write-Host "Extraction completed using Expand-Archive" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Expand-Archive failed, trying alternative method..." -ForegroundColor Yellow
+        
+        # Fallback to COM object method for older PowerShell versions
+        try {
+            $shell = New-Object -ComObject Shell.Application
+            $zip = $shell.NameSpace($ZIP_FILE)
+            $destination = $shell.NameSpace($extractPath)
+            $destination.CopyHere($zip.Items(), 4)
+            Write-Host "Extraction completed using Shell.Application" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Shell.Application also failed, trying .NET method..." -ForegroundColor Yellow
+            
+            # Try .NET ZipFile method
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($ZIP_FILE, $extractPath)
+            Write-Host "Extraction completed using .NET ZipFile" -ForegroundColor Green
+        }
+    }
 }
 catch {
     Write-Host "Failed to extract archive: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "ZIP file location: $ZIP_FILE" -ForegroundColor Yellow
+    Write-Host "Extract path: $extractPath" -ForegroundColor Yellow
+    
+    if (Test-Path $ZIP_FILE) {
+        $fileInfo = Get-Item $ZIP_FILE
+        Write-Host "ZIP file size: $($fileInfo.Length) bytes" -ForegroundColor Yellow
+        Write-Host "ZIP file created: $($fileInfo.CreationTime)" -ForegroundColor Yellow
+    }
+    
     Read-Host "Press Enter to exit"
     exit 1
 }
