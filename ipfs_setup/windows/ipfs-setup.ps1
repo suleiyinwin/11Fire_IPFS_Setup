@@ -15,6 +15,27 @@ Write-Host "==========================================" -ForegroundColor Cyan
 $KUBO_VERSION = "v0.34.1"
 $BOOTSTRAP_NODE = "/ip4/10.4.56.71/tcp/4001/p2p/12D3KooWB8e8PHhq1GbdeZk9Y6fLUBYu6AqZKjs15zQZaGrYHxu9"
 
+# Create a safe working directory first (before any file operations)
+$workingDir = "$env:TEMP\ipfs-setup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+try {
+    if (-not (Test-Path $workingDir)) {
+        New-Item -Path $workingDir -ItemType Directory -Force | Out-Null
+    }
+    Write-Host "Working directory: $workingDir" -ForegroundColor Gray
+    Set-Location $workingDir
+    Write-Host "Changed to working directory" -ForegroundColor Gray
+}
+catch {
+    Write-Host "Failed to create working directory: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Falling back to user profile directory..." -ForegroundColor Yellow
+    $workingDir = "$env:USERPROFILE\ipfs-setup-temp"
+    if (-not (Test-Path $workingDir)) {
+        New-Item -Path $workingDir -ItemType Directory -Force | Out-Null
+    }
+    Set-Location $workingDir
+    Write-Host "Using fallback directory: $workingDir" -ForegroundColor Gray
+}
+
 # Check if swarm key is provided via environment variable
 if ([string]::IsNullOrEmpty($env:IPFS_SWARM_KEY)) {
     Write-Host "Error: IPFS_SWARM_KEY environment variable is not set!" -ForegroundColor Red
@@ -39,14 +60,6 @@ if ([string]::IsNullOrEmpty($env:IPFS_SWARM_KEY)) {
 
 Write-Host "Swarm key found in environment variable" -ForegroundColor Green
 
-# Create a safe working directory
-$workingDir = "$env:TEMP\ipfs-setup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-if (-not (Test-Path $workingDir)) {
-    New-Item -Path $workingDir -ItemType Directory -Force | Out-Null
-}
-Write-Host "Working directory: $workingDir" -ForegroundColor Gray
-Set-Location $workingDir
-
 # Check if running as Administrator (optional for user-level install)
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
@@ -70,9 +83,10 @@ switch ($arch) {
 }
 
 $DOWNLOAD_URL = "https://dist.ipfs.tech/kubo/$KUBO_VERSION/kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
-$ZIP_FILE = "kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
+$ZIP_FILE = "$workingDir\kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
 
 Write-Host "Step 1: Downloading IPFS Kubo $KUBO_VERSION for Windows $ARCH_NAME..." -ForegroundColor Green
+Write-Host "Download location: $ZIP_FILE" -ForegroundColor Gray
 
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -81,14 +95,25 @@ try {
 }
 catch {
     Write-Host "Failed to download IPFS Kubo: $($_.Exception.Message)" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
+    Write-Host "Trying alternative download location..." -ForegroundColor Yellow
+    try {
+        $alternativeFile = "$env:USERPROFILE\Downloads\kubo_${KUBO_VERSION}_windows-${ARCH_NAME}.zip"
+        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $alternativeFile -UseBasicParsing
+        $ZIP_FILE = $alternativeFile
+        Write-Host "Download completed to: $ZIP_FILE" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to download to alternative location: $($_.Exception.Message)" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 }
 
 Write-Host "Step 2: Extracting archive..." -ForegroundColor Green
 try {
-    Expand-Archive -Path $ZIP_FILE -DestinationPath "." -Force
-    Write-Host "Extraction completed" -ForegroundColor Green
+    $extractPath = Split-Path $ZIP_FILE -Parent
+    Expand-Archive -Path $ZIP_FILE -DestinationPath $extractPath -Force
+    Write-Host "Extraction completed to: $extractPath" -ForegroundColor Green
 }
 catch {
     Write-Host "Failed to extract archive: $($_.Exception.Message)" -ForegroundColor Red
@@ -114,14 +139,23 @@ try {
     }
     
     # Check if ipfs.exe exists in the kubo folder
-    if (-not (Test-Path "kubo\ipfs.exe")) {
+    $extractPath = Split-Path $ZIP_FILE -Parent
+    $kuboPath = "$extractPath\kubo"
+    if (-not (Test-Path "$kuboPath\ipfs.exe")) {
         Write-Host "Error: ipfs.exe not found in kubo folder" -ForegroundColor Red
-        Write-Host "Contents of kubo folder:" -ForegroundColor Yellow
-        Get-ChildItem "kubo" | Format-Table Name
+        Write-Host "Extract path: $extractPath" -ForegroundColor Yellow
+        Write-Host "Looking for: $kuboPath\ipfs.exe" -ForegroundColor Yellow
+        if (Test-Path $kuboPath) {
+            Write-Host "Contents of kubo folder:" -ForegroundColor Yellow
+            Get-ChildItem $kuboPath | Format-Table Name
+        } else {
+            Write-Host "Kubo folder not found. Contents of extract path:" -ForegroundColor Yellow
+            Get-ChildItem $extractPath | Format-Table Name
+        }
         throw "IPFS binary not found"
     }
     
-    Copy-Item "kubo\ipfs.exe" "$installPath\ipfs.exe" -Force
+    Copy-Item "$kuboPath\ipfs.exe" "$installPath\ipfs.exe" -Force
     
     # Add to PATH (system or user level based on privileges)
     $currentPath = [Environment]::GetEnvironmentVariable("Path", $pathScope)
@@ -214,14 +248,22 @@ catch {
 
 Write-Host "Step 9: Cleaning up..." -ForegroundColor Green
 try {
-    Remove-Item $ZIP_FILE -ErrorAction SilentlyContinue
-    Remove-Item "kubo" -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $ZIP_FILE) {
+        Remove-Item $ZIP_FILE -ErrorAction SilentlyContinue
+    }
+    $extractPath = Split-Path $ZIP_FILE -Parent
+    $kuboPath = "$extractPath\kubo"
+    if (Test-Path $kuboPath) {
+        Remove-Item $kuboPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "Cleanup completed" -ForegroundColor Green
     
-    # Clean up working directory
-    Set-Location $env:USERPROFILE
-    Remove-Item $workingDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Working directory cleaned up" -ForegroundColor Green
+    # Clean up working directory if it's a temp directory
+    if ($workingDir -like "*temp*" -and $workingDir -ne $env:USERPROFILE) {
+        Set-Location $env:USERPROFILE
+        Remove-Item $workingDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Working directory cleaned up" -ForegroundColor Green
+    }
 }
 catch {
     Write-Host "Cleanup had some issues, but installation completed" -ForegroundColor Yellow
