@@ -39,6 +39,14 @@ if ([string]::IsNullOrEmpty($env:IPFS_SWARM_KEY)) {
 
 Write-Host "Swarm key found in environment variable" -ForegroundColor Green
 
+# Create a safe working directory
+$workingDir = "$env:TEMP\ipfs-setup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+if (-not (Test-Path $workingDir)) {
+    New-Item -Path $workingDir -ItemType Directory -Force | Out-Null
+}
+Write-Host "Working directory: $workingDir" -ForegroundColor Gray
+Set-Location $workingDir
+
 # Check if running as Administrator (optional for user-level install)
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
@@ -209,6 +217,11 @@ try {
     Remove-Item $ZIP_FILE -ErrorAction SilentlyContinue
     Remove-Item "kubo" -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Cleanup completed" -ForegroundColor Green
+    
+    # Clean up working directory
+    Set-Location $env:USERPROFILE
+    Remove-Item $workingDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Working directory cleaned up" -ForegroundColor Green
 }
 catch {
     Write-Host "Cleanup had some issues, but installation completed" -ForegroundColor Yellow
