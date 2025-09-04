@@ -278,7 +278,12 @@ if (Test-Path $ipfsPath) {
 Write-Host "Step 6: Creating swarm key from environment variable..." -ForegroundColor Green
 try {
     $swarmKeyPath = "$ipfsPath\swarm.key"
-    $env:IPFS_SWARM_KEY | Out-File -FilePath $swarmKeyPath -Encoding UTF8
+    
+    # Write swarm key without BOM (Byte Order Mark) to avoid parsing errors
+    # Using .NET method instead of Out-File to ensure no BOM is added
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($swarmKeyPath, $env:IPFS_SWARM_KEY, $utf8NoBom)
+    
     Write-Host "Swarm key created at: $swarmKeyPath" -ForegroundColor Green
     
     # Validate swarm key format (basic check)
@@ -288,7 +293,14 @@ try {
         Write-Host "   /key/swarm/psk/1.0.0/" -ForegroundColor Gray
         Write-Host "   /base16/" -ForegroundColor Gray
         Write-Host "   <64-character-hex-key>" -ForegroundColor Gray
+    } else {
+        Write-Host "Swarm key format validated successfully" -ForegroundColor Green
     }
+    
+    # Show first few characters to verify no BOM
+    $firstBytes = [System.IO.File]::ReadAllBytes($swarmKeyPath) | Select-Object -First 10
+    $firstChars = [System.Text.Encoding]::UTF8.GetString($firstBytes)
+    Write-Host "Key file starts with: $($firstChars.Substring(0, [Math]::Min(20, $firstChars.Length)))" -ForegroundColor Gray
 }
 catch {
     Write-Host "Failed to create swarm key: $($_.Exception.Message)" -ForegroundColor Red
