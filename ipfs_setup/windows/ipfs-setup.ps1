@@ -39,16 +39,14 @@ if ([string]::IsNullOrEmpty($env:IPFS_SWARM_KEY)) {
 
 Write-Host "Swarm key found in environment variable" -ForegroundColor Green
 
-# Check if running as Administrator
+# Check if running as Administrator (optional for user-level install)
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
 $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    Write-Host "This script requires Administrator privileges." -ForegroundColor Yellow
-    Write-Host "Please run PowerShell as Administrator and try again." -ForegroundColor Yellow
-    Read-Host "Press Enter to exit"
-    exit 1
+    Write-Host "Running without Administrator privileges - installing to user directory" -ForegroundColor Yellow
+    Write-Host "IPFS will be installed for current user only" -ForegroundColor Yellow
 }
 
 # Detect architecture
@@ -92,7 +90,17 @@ catch {
 
 Write-Host "Step 3: Installing IPFS..." -ForegroundColor Green
 try {
-    $installPath = "$env:ProgramFiles\IPFS"
+    # Choose installation path based on admin privileges
+    if ($isAdmin) {
+        $installPath = "$env:ProgramFiles\IPFS"
+        $pathScope = "Machine"
+        Write-Host "Installing to system directory (admin mode)" -ForegroundColor Green
+    } else {
+        $installPath = "$env:USERPROFILE\IPFS\bin"
+        $pathScope = "User"
+        Write-Host "Installing to user directory (non-admin mode)" -ForegroundColor Green
+    }
+    
     if (-not (Test-Path $installPath)) {
         New-Item -Path $installPath -ItemType Directory -Force | Out-Null
     }
@@ -107,11 +115,12 @@ try {
     
     Copy-Item "kubo\ipfs.exe" "$installPath\ipfs.exe" -Force
     
-    # Add to system PATH
-    $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    # Add to PATH (system or user level based on privileges)
+    $currentPath = [Environment]::GetEnvironmentVariable("Path", $pathScope)
     if ($currentPath -notlike "*$installPath*") {
-        [Environment]::SetEnvironmentVariable("Path", "$currentPath;$installPath", "Machine")
+        [Environment]::SetEnvironmentVariable("Path", "$currentPath;$installPath", $pathScope)
         $env:Path += ";$installPath"
+        Write-Host "Added IPFS to $pathScope PATH" -ForegroundColor Green
     }
     
     Write-Host "Installation completed" -ForegroundColor Green
@@ -209,10 +218,12 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "IPFS Setup Complete!" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Configuration Summary:" -ForegroundColor White
+Write-Host "• Installation path: $installPath" -ForegroundColor White
 Write-Host "• Bootstrap nodes:" -ForegroundColor White
 & ipfs bootstrap list
 Write-Host "• Swarm key: $ipfsPath\swarm.key" -ForegroundColor White
 Write-Host "• Private network: Enabled" -ForegroundColor White
+Write-Host "• Installed for: $(if ($isAdmin) { 'All users (system-wide)' } else { 'Current user only' })" -ForegroundColor White
 Write-Host ""
 Write-Host "To start IPFS daemon:" -ForegroundColor Yellow
 Write-Host "   ipfs daemon" -ForegroundColor White
@@ -221,6 +232,9 @@ Write-Host "To check connected peers:" -ForegroundColor Yellow
 Write-Host "   ipfs swarm peers" -ForegroundColor White
 Write-Host ""
 Write-Host "Security Note: Swarm key loaded from IPFS_SWARM_KEY environment variable" -ForegroundColor Green
+if (-not $isAdmin) {
+    Write-Host "Note: You may need to restart PowerShell for PATH changes to take effect" -ForegroundColor Yellow
+}
 Write-Host "Note: You may need to allow IPFS through Windows Firewall" -ForegroundColor Yellow
 Write-Host "==========================================" -ForegroundColor Cyan
 
